@@ -11,7 +11,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const token = "NDYyNzk1MTIyNzc4NzAxODI0.XiSPmA.aLf8IdjEUoKvYt1eK1__-SYJ4Jo"
+const token = ""
 
 // waitTime is the time to wait between pings
 const waitTime = time.Second * 5
