@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,31 +67,41 @@ func isNum(c rune) bool {
 }
 
 func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
-	space := strings.Index(m.Content, " ")
-	if space == -1 {
-		return "usage: @ping <target>"
+	args := strings.Split(m.Content, " ")
+	if len(args) < 2 {
+		return "usage: @ping <target> [interval]"
 	}
 
-	mention := m.Content[space+1:]
+	mention := args[1]
 	userID := mention[strings.IndexFunc(mention, isNum) : len(mention)-1]
 	match := regexp.MustCompile(`<@!?\d+>`).MatchString(mention)
 	if !match {
 		return "invalid target"
 	} else if userID == m.Author.ID {
 		return "you can't ping yourself silly"
-	} else if userID == s.State.User.ID {
 	}
 
-	fmt.Println(mention)
-	fmt.Println(userID)
 	member, err := s.State.Member(m.GuildID, userID)
 	if err != nil {
 		return "invalid mention"
 	} else if member.User.Bot {
 		return "no pinging bots"
+	} else if pings[userID] != nil {
+		return "they're already being pinged!"
 	}
 
-	pings[userID] = &ping{ChannelID: m.ChannelID, AuthorID: m.Author.ID}
+	wait := waitTime
+	if len(args) == 3 {
+		i, err := strconv.ParseInt(args[2], 10, 8)
+		if err != nil {
+			return "error converting interval: " + err.Error()
+		} else if i < 2 {
+			return "invalid interval: minimum of 2 seconds required"
+		}
+		wait = time.Duration(i) * time.Second
+	}
+
+	pings[userID] = &ping{ChannelID: m.ChannelID, AuthorID: m.Author.ID, WaitTime: wait}
 	go pings[userID].Run(s, mention)
 
 	return "added ping :)"
@@ -100,6 +110,7 @@ func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
 type ping struct {
 	ChannelID string
 	AuthorID  string
+	WaitTime  time.Duration
 	running   bool
 }
 
@@ -109,6 +120,6 @@ func (p *ping) Run(s *discordgo.Session, mention string) {
 
 	for p.running {
 		s.ChannelMessageSend(p.ChannelID, mention)
-		time.Sleep(waitTime)
+		time.Sleep(p.WaitTime)
 	}
 }
