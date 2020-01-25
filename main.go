@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"regexp"
@@ -11,16 +13,27 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const token = ""
+type config struct {
+	Token    string `json:"token"`
+	WaitTime int    `json:"wait_time"`
+}
 
-// waitTime is the time to wait between pings
-const waitTime = time.Second * 5
+var cfg config
 
 var pings map[string]*ping
 
 func main() {
+	b, err := ioutil.ReadFile("config.json")
+	if err != nil {
+		panic(err)
+	}
+	err = json.Unmarshal(b, &cfg)
+	if err != nil {
+		panic(err)
+	}
+
 	pings = make(map[string]*ping)
-	d, err := discordgo.New("Bot " + token)
+	d, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		panic(err)
 	}
@@ -90,7 +103,7 @@ func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
 		return "they're already being pinged!"
 	}
 
-	wait := waitTime
+	wait := time.Duration(cfg.WaitTime)
 	if len(args) == 3 {
 		i, err := strconv.ParseInt(args[2], 10, 8)
 		if err != nil {
