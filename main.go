@@ -104,7 +104,7 @@ func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
 		return "they're already being pinged!"
 	}
 
-	wait := time.Duration(cfg.WaitTime)
+	wait := time.Duration(cfg.WaitTime) * time.Second
 	if len(args) == 3 {
 		i, err := strconv.ParseInt(args[2], 10, 8)
 		if err != nil {
