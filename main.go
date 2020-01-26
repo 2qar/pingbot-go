@@ -86,11 +86,12 @@ func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
 	}
 
 	mention := args[1]
-	userID := mention[strings.IndexFunc(mention, isNum) : len(mention)-1]
 	match := regexp.MustCompile(`<@!?\d+>`).MatchString(mention)
 	if !match {
 		return "invalid target"
-	} else if userID == m.Author.ID {
+	}
+	userID := mention[strings.IndexFunc(mention, isNum) : len(mention)-1]
+	if userID == m.Author.ID {
 		return "you can't ping yourself silly"
 	}
 
