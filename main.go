@@ -45,9 +45,11 @@ func main() {
 	if err != nil && !os.IsNotExist(err) {
 		panic(err)
 	}
-	err = json.Unmarshal(b, &pingRoles)
-	if err != nil {
-		panic(err)
+	if len(b) > 0 {
+		err = json.Unmarshal(b, &pingRoles)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	d, err := discordgo.New("Bot " + cfg.Token)
