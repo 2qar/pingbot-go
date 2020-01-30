@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -22,6 +23,14 @@ var cfg config
 
 var pings map[string]*ping
 
+var pingRoles map[string]string
+var pingRolesLock sync.RWMutex
+
+func init() {
+	pings = make(map[string]*ping)
+	pingRoles = make(map[string]string)
+}
+
 func main() {
 	b, err := ioutil.ReadFile("config.json")
 	if err != nil {
@@ -32,7 +41,15 @@ func main() {
 		panic(err)
 	}
 
-	pings = make(map[string]*ping)
+	b, err = ioutil.ReadFile("roles.json")
+	if err != nil && !os.IsNotExist(err) {
+		panic(err)
+	}
+	err = json.Unmarshal(b, &pingRoles)
+	if err != nil {
+		panic(err)
+	}
+
 	d, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		panic(err)
@@ -46,9 +63,26 @@ func main() {
 	}
 	defer d.Close()
 
+	defer savePingRoles()
+
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, os.Interrupt, os.Kill)
 	<-sc
+}
+
+func savePingRoles() {
+	pingRolesLock.Lock()
+	defer pingRolesLock.Unlock()
+
+	b, err := json.Marshal(pingRoles)
+	if err != nil {
+		panic(err)
+	}
+
+	err = ioutil.WriteFile("roles.json", b, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -70,6 +104,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if !found {
 			s.ChannelMessageSend(m.ChannelID, "nah")
 		}
+
+	} else if strings.HasPrefix(m.Content, "@pingroledel") {
+		s.ChannelMessageSend(m.ChannelID, delPingRole(s, m))
+	} else if strings.HasPrefix(m.Content, "@pingrole") {
+		s.ChannelMessageSend(m.ChannelID, setPingRole(s, m))
 	} else if strings.HasPrefix(m.Content, "@ping") {
 		s.ChannelMessageSend(m.ChannelID, parsePing(s, m))
 	}
@@ -83,6 +122,19 @@ func parsePing(s *discordgo.Session, m *discordgo.MessageCreate) string {
 	args := strings.Split(m.Content, " ")
 	if len(args) < 2 {
 		return "usage: @ping <target> [interval]"
+	}
+
+	pingRoleID, ok := pingRoles[m.GuildID]
+	if ok {
+		found := false
+		for _, roleID := range m.Member.Roles {
+			if roleID == pingRoleID {
+				found = true
+			}
+		}
+		if !found {
+			return "you don't have permission to ping people"
+		}
 	}
 
 	mention := args[1]
@@ -136,4 +188,54 @@ func (p *ping) Run(s *discordgo.Session, mention string) {
 		s.ChannelMessageSend(p.ChannelID, mention)
 		time.Sleep(p.WaitTime)
 	}
+}
+
+func isAdmin(userRoles []string, guildRoles []*discordgo.Role) bool {
+	for _, roleID := range userRoles {
+		for _, role := range guildRoles {
+			if role.ID == roleID && role.Permissions&discordgo.PermissionAdministrator == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func setPingRole(s *discordgo.Session, m *discordgo.MessageCreate) string {
+	guild, _ := s.State.Guild(m.GuildID)
+	if !isAdmin(m.Member.Roles, guild.Roles) {
+		return "you're not an admin so you can't do this"
+	}
+
+	args := strings.Split(m.Content, " ")
+	if len(args) != 2 {
+		return "usage: @pingrole <roleID>"
+	}
+
+	if strings.IndexFunc(args[1], func(c rune) bool { return !isNum(c) }) != -1 {
+		return "invalid roleID"
+	} else if _, err := s.State.Role(m.GuildID, args[1]); err != nil {
+		return "invalid roleID"
+	}
+
+	pingRolesLock.Lock()
+	defer pingRolesLock.Unlock()
+
+	pingRoles[m.GuildID] = args[1]
+
+	return "set ping role :)"
+}
+
+func delPingRole(s *discordgo.Session, m *discordgo.MessageCreate) string {
+	guild, _ := s.State.Guild(m.GuildID)
+	if !isAdmin(m.Member.Roles, guild.Roles) {
+		return "you're not an admin so you can't do this"
+	}
+
+	pingRolesLock.Lock()
+	defer pingRolesLock.Unlock()
+
+	delete(pingRoles, m.GuildID)
+
+	return "deleted ping role; anybody can @ping now"
 }
